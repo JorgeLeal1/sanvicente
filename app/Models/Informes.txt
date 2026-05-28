@@ -1,0 +1,156 @@
+1. Informes Académicos Generales
+
+Alumnos por curso y año académico
+Cantidad de alumnos por curso, ciclo, semestre y año
+Matrícula total por año académico (y comparación con años anteriores)
+Tasa de deserción / retiro de alumnos
+Alumnos por género y edad
+Alumnos con apoderados principales
+
+2. Informes de Profesores
+
+Carga académica por profesor (asignaturas y cursos que imparte por año)
+Cantidad de cursos por profesor
+Profesores por especialidad
+Profesor Jefe por curso
+Horario semanal por profesor
+Profesores con mayor cantidad de alumnos
+
+3. Informes de Notas y Rendimiento
+
+Promedio por alumno, asignatura y semestre
+Promedio general por curso y año
+Ranking de alumnos por curso (mejores y peores promedios)
+Distribución de notas (cantidad de alumnos por rango: 1.0-3.9, 4.0-5.9, 6.0-7.0)
+Asignaturas con mejor y peor rendimiento
+Evolución de notas por semestre (comparativa Semestre 1 vs Semestre 2)
+Alumnos en riesgo académico (promedio bajo)
+
+4. Informes de Asistencia
+
+Porcentaje de asistencia por alumno, curso y asignatura
+Alumnos con mayor y menor asistencia
+Asistencia mensual / por semestre
+Ausencias justificadas vs injustificadas
+Profesor con mejor registro de asistencia
+
+5. Informes Administrativos / Institucionales
+
+Matrícula total del colegio por año
+Cantidad de cursos, ciclos y semestres activos
+Relación alumno/profesor
+Distribución de alumnos por nivel (1° Medio, 2° Medio, etc.)
+Informe de apoderados (cantidad por alumno, contacto principal)
+Alumnos sin apoderado registrado
+
+6. Informes Específicos para Dirección / UTP
+
+Reporte final de promoción (alumnos aprobados / reprobados por curso)
+Alumnos con promedio final anual
+Comparativa de rendimiento entre cursos paralelos
+Informe de rendimiento por asignatura
+Top 10 mejores alumnos del colegio
+
+7. Otros Informes Útiles
+
+Horarios completos por curso
+Asignaturas impartidas por semestre/año
+Alumnos que repiten curso
+Cantidad de evaluaciones realizadas por asignatura
+Reporte de contactos (teléfonos y emails de apoderados y alumnos)
+
+////////////////////////////////////////////////////////////////////////////////////////////////////
+
+
+
+1. Informes de Alumnos y Matrícula
+1.1 Alumnos por curso, semestre y año académico
+SQLSELECT
+    c.nivel, c.letra,
+    COUNT(a.id) as total_alumnos
+FROM matriculas m
+JOIN cursos c ON c.id = m.curso_id
+JOIN alumnos a ON a.id = m.alumno_id
+WHERE m.anio_academico_id = 1
+GROUP BY c.id, c.nivel, c.letra
+ORDER BY c.nivel, c.letra;
+
+Eloquent:
+PHP$alumnosPorCurso = Matricula::with('curso')
+    ->where('anio_academico_id', $anioId)
+    ->selectRaw('curso_id, COUNT(*) as total')
+    ->groupBy('curso_id')
+    ->get();
+
+1.2 Listado completo de alumnos por curso
+SQLSELECT p.nombre1, p.nombre2, p.apellido1, p.apellido2, p.rut, c.nivel, c.letra
+FROM alumnos al
+JOIN personas p ON p.id = al.persona_id
+JOIN matriculas m ON m.alumno_id = al.id
+JOIN cursos c ON c.id = m.curso_id
+WHERE m.anio_academico_id = ?
+ORDER BY c.nivel, c.letra, p.apellido1;
+
+2. Informes de Profesores
+2.1 Carga académica por profesor
+SQLSELECT
+    p.nombre1, p.apellido1,
+    a.nombre as asignatura,
+    c.nivel, c.letra,
+    COUNT(DISTINCT m.alumno_id) as total_alumnos
+FROM carga_academicas ca
+JOIN profesores pr ON pr.id = ca.profesor_id
+JOIN personas p ON p.id = pr.persona_id
+JOIN asignaturas a ON a.id = ca.asignatura_id
+JOIN cursos c ON c.id = ca.curso_id
+LEFT JOIN matriculas m ON m.curso_id = c.id
+    AND m.anio_academico_id = ca.anio_academico_id
+WHERE ca.anio_academico_id = ?
+GROUP BY pr.id, a.id, c.id;
+
+3. Informes de Notas y Rendimiento
+3.1 Promedio por alumno, asignatura y semestre
+SQLSELECT
+    p.nombre1, p.apellido1,
+    a.nombre as asignatura,
+    s.nombre as semestre,
+    AVG(e.nota) as promedio,
+    COUNT(e.id) as evaluaciones
+FROM evaluaciones e
+JOIN matriculas m ON m.id = e.matricula_id
+JOIN personas p ON p.id = m.alumno_id  -- espera, join con persona a través de alumno
+JOIN carga_academicas ca ON ca.id = e.carga_academica_id
+JOIN asignaturas a ON a.id = ca.asignatura_id
+JOIN semestres s ON s.id = ? -- según tu estructura
+GROUP BY m.alumno_id, ca.asignatura_id, s.id;
+3.2 Ranking de alumnos por curso
+SQLSELECT
+    p.apellido1, p.nombre1,
+    AVG(e.nota) as promedio_final
+FROM evaluaciones e
+JOIN matriculas m ON m.id = e.matricula_id
+JOIN personas p ON p.id = (SELECT persona_id FROM alumnos WHERE id = m.alumno_id)
+WHERE m.curso_id = ?
+GROUP BY m.alumno_id
+ORDER BY promedio_final DESC;
+
+4. Informes de Asistencia
+4.1 Porcentaje de asistencia por alumno y asignatura
+SQLSELECT
+    p.nombre1, p.apellido1,
+    a.nombre as asignatura,
+    COUNT(CASE WHEN asis.estado = 1 THEN 1 END) * 100.0 / COUNT(*) as porcentaje_asistencia
+FROM asistencias asis
+JOIN matriculas m ON m.id = asis.matricula_id
+JOIN personas p ON p.id = (SELECT persona_id FROM alumnos WHERE id = m.alumno_id)
+JOIN carga_academicas ca ON ca.id = asis.carga_academica_id
+JOIN asignaturas a ON a.id = ca.asignatura_id
+GROUP BY m.alumno_id, ca.asignatura_id;
+
+5. Informes Institucionales
+5.1 Resumen general del colegio por año
+SQLSELECT
+    (SELECT COUNT(*) FROM alumnos) as total_alumnos,
+    (SELECT COUNT(*) FROM profesores) as total_profesores,
+    (SELECT COUNT(*) FROM cursos) as total_cursos,
+    (SELECT COUNT(*) FROM matriculas WHERE anio_academico_id = ?) as matriculas_activas;
